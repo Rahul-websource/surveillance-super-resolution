@@ -7,6 +7,10 @@
 /data/validation/
 /data/test/
 
+# Downloaded datasets and generated DIV2K pairs
+/data/external/
+/data/DIV2K/
+
 # Generated outputs and model checkpoints
 /outputs/
 /checkpoints/

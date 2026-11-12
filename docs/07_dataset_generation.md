@@ -1,4 +1,3 @@
-
 # Experiment 04: HR-LR Dataset Generation and Validation
 
 ## 1. Objective
@@ -112,3 +111,96 @@ Result: 8 tests passed, 0 failures.
 A reusable HR-LR dataset generation pipeline has been implemented and tested successfully. The pipeline generates paired images, validates their dimensions and pairing, and provides automated tests for its core degradation functions.
 
 This experiment establishes the data preparation foundation for future super-resolution model development.
+
+
+# Experiment 06 — DIV2K Dataset Preparation
+
+## 1. Objective
+
+Prepare a reproducible high-resolution and low-resolution
+paired dataset using DIV2K for training and evaluating
+the SRCNN super-resolution model.
+
+## 2. Dataset
+
+Source: DIV2K
+
+| Split | Original HR Images |
+|---|---:|
+| Training | 800 |
+| Validation | 100 |
+| Total | 900 |
+
+Original images are retained separately from generated pairs.
+
+## 3. Degradation Pipeline
+
+Each HR image is processed using:
+
+1. Gaussian blur (5x5 kernel, sigma 1.0)
+2. Gaussian noise (standard deviation 10)
+3. JPEG compression (quality 40)
+4. 4x downsampling using INTER_AREA
+
+Images are cropped at the bottom and right edges when
+necessary to make their dimensions divisible by four.
+
+## 4. Output Structure
+
+data/DIV2K/
+    train/
+        HR/
+        LR/
+    validation/
+        HR/
+        LR/
+
+## 5. Generation Results
+
+| Metric | Result |
+|---|---:|
+| Training pairs generated | 800 |
+| Validation pairs generated | 100 |
+| Generation failures | 0 |
+| Total pairs | 900 |
+
+## 6. Validation Results
+
+The dataset validator checks:
+
+- Matching HR and LR filenames
+- Image readability
+- Three-channel color images
+- uint8 image data
+- HR dimensions divisible by four
+- Exact 4x HR-to-LR dimensions
+
+Validation errors: 0
+
+## 7. Automated Testing
+
+The complete test suite passed:
+
+| Test Module | Tests Passed |
+|---|---:|
+| Image degradation | 8 |
+| DIV2K pipeline | 6 |
+| SRCNN model | 6 |
+| SRCNN dataset | 5 |
+| Total | 25 |
+
+## 8. Reproducibility
+
+The degradation pipeline uses a configured random seed.
+Training and validation use separate seed ranges.
+
+The downloaded archives, extracted images, and generated
+datasets are excluded from Git.
+
+## 9. Limitations
+
+DIV2K contains natural images and does not represent all
+surveillance camera degradation conditions.
+
+CCTV-specific validation is necessary before making
+claims about real surveillance footage enhancement.

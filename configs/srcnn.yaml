@@ -1,0 +1,38 @@
+
+# SRCNN Training Configuration
+
+experiment:
+  name: srcnn_surveillance_super_resolution
+  seed: 42
+
+model:
+  input_channels: 3
+  output_channels: 3
+  feature_channels: 64
+  mapping_channels: 32
+
+data:
+  hr_directory: data/generated/HR
+  lr_directory: data/generated/LR
+  scale_factor: 4
+  input_crop: 6
+
+training:
+  epochs: 20
+  batch_size: 1
+  learning_rate: 0.0001
+  weight_decay: 0.0
+  num_workers: 0
+
+optimizer:
+  name: Adam
+
+loss:
+  name: MSELoss
+
+checkpoint:
+  directory: checkpoints/srcnn
+  save_best_only: true
+
+device:
+  use_cuda: false
