@@ -1,47 +1,24 @@
-# Python
-__pycache__/
-*.py[cod]
-*.pyd
-*.egg-info/
+# Local datasets and private source images
+/data/source/
+/data/generated/
+/data/raw/
+/data/processed/
+/data/train/
+/data/validation/
+/data/test/
 
-# Virtual environments
-.venv/
-venv/
-env/
-
-# IDE
-.vscode/
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Dataset
-data/raw/*
-data/processed/*
-data/train/*
-data/validation/*
-data/test/*
-
-# Model checkpoints
-checkpoints/*
+# Generated outputs and model checkpoints
+/outputs/
+/checkpoints/
 *.pth
 *.pt
 *.ckpt
 
-# Generated outputs
-outputs/images/*
-outputs/videos/*
+# Python environment and cache
+.venv/
+__pycache__/
+*.py[cod]
 
-# Logs
-*.log
-runs/
-tensorboard/
-
-# Environment variables and secrets
+# Secrets
 .env
 .env.*
-!.env.example
-
-# OS
-.DS_Store
-Thumbs.db
