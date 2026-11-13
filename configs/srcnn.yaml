@@ -2,7 +2,7 @@
 # SRCNN Training Configuration
 
 experiment:
-  name: srcnn_surveillance_super_resolution
+  name: srcnn_div2k_super_resolution_5_epochs
   seed: 42
 
 model:
@@ -12,14 +12,18 @@ model:
   mapping_channels: 32
 
 data:
-  hr_directory: data/generated/HR
-  lr_directory: data/generated/LR
+  train_hr_directory: data/DIV2K/train/HR
+  train_lr_directory: data/DIV2K/train/LR
+  validation_hr_directory: data/DIV2K/validation/HR
+  validation_lr_directory: data/DIV2K/validation/LR
   scale_factor: 4
   input_crop: 6
+  patch_size: 128
+  patches_per_image: 4
 
 training:
-  epochs: 20
-  batch_size: 1
+  epochs: 5
+  batch_size: 4
   learning_rate: 0.0001
   weight_decay: 0.0
   num_workers: 0
@@ -31,7 +35,7 @@ loss:
   name: MSELoss
 
 checkpoint:
-  directory: checkpoints/srcnn
+  directory: checkpoints/srcnn_5_epochs
   save_best_only: true
 
 device:

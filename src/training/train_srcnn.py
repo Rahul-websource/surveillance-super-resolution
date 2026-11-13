@@ -4,14 +4,16 @@ SRCNN Training Engine.
 
 Features:
 - YAML configuration
-- Reproducibility
+- Reproducible training
 - CPU/GPU device selection
-- Training and validation
+- Separate DIV2K training and validation datasets
+- Patch-based data loading
 - Adam optimizer
 - MSE loss
-- Best model checkpointing
+- Best validation checkpointing
 """
 
+import argparse
 import random
 from pathlib import Path
 
@@ -19,20 +21,37 @@ import numpy as np
 import torch
 import yaml
 
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader
 
-from src.models.srcnn import SRCNN
-from src.data.srcnn_dataset import SRCNNDataset
+from src.data.srcnn_patch_dataset import SRCNNPatchDataset
 from src.losses.srcnn_loss import SRCNNLoss
+from src.models.srcnn import SRCNN
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = PROJECT_ROOT / "configs" / "srcnn.yaml"
 
 
-def load_config():
-    with open(CONFIG_PATH, "r", encoding="utf-8") as file:
-        return yaml.safe_load(file)
+
+def load_config(config_path=None):
+
+    if config_path is None:
+        config_path = CONFIG_PATH
+
+    config_path = Path(config_path)
+
+    if not config_path.is_absolute():
+        config_path = PROJECT_ROOT / config_path
+
+    if not config_path.is_file():
+        raise FileNotFoundError(
+            f"Configuration file not found: {config_path}"
+        )
+
+    with open(config_path, "r", encoding="utf-8") as file:
+        config = yaml.safe_load(file)
+
+    return config
 
 
 def set_seed(seed):
@@ -55,17 +74,45 @@ def get_device(config):
     return torch.device("cpu")
 
 
+def create_dataset(hr_dir, lr_dir, config, training):
+
+    data_config = config["data"]
+
+    return SRCNNPatchDataset(
+        hr_dir=hr_dir,
+        lr_dir=lr_dir,
+        patch_size=data_config["patch_size"],
+        patches_per_image=data_config["patches_per_image"],
+        scale_factor=data_config["scale_factor"],
+        input_crop=data_config["input_crop"],
+        training=training,
+    )
+
+
+def create_dataloader(dataset, config, training):
+
+    return DataLoader(
+        dataset,
+        batch_size=config["training"]["batch_size"],
+        shuffle=training,
+        num_workers=config["training"]["num_workers"],
+        pin_memory=False,
+        drop_last=False,
+    )
+
+
 def train_one_epoch(model, loader, criterion, optimizer, device):
 
     model.train()
     total_loss = 0.0
+    total_samples = 0
 
     for lr_images, hr_images in loader:
 
         lr_images = lr_images.to(device)
         hr_images = hr_images.to(device)
 
-        optimizer.zero_grad()
+        optimizer.zero_grad(set_to_none=True)
 
         predictions = model(lr_images)
 
@@ -74,15 +121,22 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
         loss.backward()
         optimizer.step()
 
-        total_loss += loss.item()
+        batch_size = lr_images.size(0)
 
-    return total_loss / len(loader)
+        total_loss += loss.item() * batch_size
+        total_samples += batch_size
+
+    if total_samples == 0:
+        raise RuntimeError("Training DataLoader is empty.")
+
+    return total_loss / total_samples
 
 
 def validate(model, loader, criterion, device):
 
     model.eval()
     total_loss = 0.0
+    total_samples = 0
 
     with torch.inference_mode():
 
@@ -95,94 +149,129 @@ def validate(model, loader, criterion, device):
 
             loss = criterion(predictions, hr_images)
 
-            total_loss += loss.item()
+            batch_size = lr_images.size(0)
 
-    return total_loss / len(loader)
+            total_loss += loss.item() * batch_size
+            total_samples += batch_size
+
+    if total_samples == 0:
+        raise RuntimeError("Validation DataLoader is empty.")
+
+    return total_loss / total_samples
 
 
 def main():
 
-    config = load_config()
+    parser = argparse.ArgumentParser(
+        description="Train SRCNN using a selected YAML configuration."
+    )
+
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="configs/srcnn.yaml",
+        help="Path to the SRCNN YAML configuration.",
+    )
+
+    args = parser.parse_args()
+
+    config = load_config(args.config)
 
     set_seed(config["experiment"]["seed"])
 
     device = get_device(config)
 
-    print("=" * 60)
-    print("SRCNN TRAINING")
-    print("=" * 60)
+    print("=" * 65)
+    print("SRCNN DIV2K PATCH-BASED TRAINING")
+    print("=" * 65)
 
+    print("Experiment:", config["experiment"]["name"])
     print("Device:", device)
 
-    # Dataset
-    hr_dir = PROJECT_ROOT / config["data"]["hr_directory"]
-    lr_dir = PROJECT_ROOT / config["data"]["lr_directory"]
+    # Resolve separate training and validation directories.
+    data_config = config["data"]
 
-    dataset = SRCNNDataset(
-        hr_dir=hr_dir,
-        lr_dir=lr_dir,
-        scale_factor=config["data"]["scale_factor"],
-        input_crop=config["data"]["input_crop"],
+    train_hr_dir = PROJECT_ROOT / data_config["train_hr_directory"]
+    train_lr_dir = PROJECT_ROOT / data_config["train_lr_directory"]
+
+    validation_hr_dir = (
+        PROJECT_ROOT / data_config["validation_hr_directory"]
     )
 
-    print("Total dataset images:", len(dataset))
-
-    # Temporary split for pipeline testing only.
-    # Do not use a one-image split for scientific evaluation.
-    if len(dataset) < 2:
-        raise ValueError(
-            "At least two image pairs are required for a training/"
-            "validation smoke test. Expand the dataset first."
-        )
-
-    train_size = max(1, int(0.8 * len(dataset)))
-    validation_size = len(dataset) - train_size
-
-    train_dataset, validation_dataset = random_split(
-        dataset,
-        [train_size, validation_size],
-        generator=torch.Generator().manual_seed(
-            config["experiment"]["seed"]
-        ),
+    validation_lr_dir = (
+        PROJECT_ROOT / data_config["validation_lr_directory"]
     )
 
-    train_loader = DataLoader(
+    # Create separate datasets.
+    train_dataset = create_dataset(
+        train_hr_dir,
+        train_lr_dir,
+        config,
+        training=True,
+    )
+
+    validation_dataset = create_dataset(
+        validation_hr_dir,
+        validation_lr_dir,
+        config,
+        training=False,
+    )
+
+    print("\nDATASET INFORMATION")
+    print("-" * 65)
+
+    print("Training images:", len(train_dataset.filenames))
+    print("Training patches per image:",
+          data_config["patches_per_image"])
+    print("Total training patches:", len(train_dataset))
+
+    print("Validation images:", len(validation_dataset.filenames))
+    print("Validation patches:", len(validation_dataset))
+
+    # Create DataLoaders.
+    train_loader = create_dataloader(
         train_dataset,
-        batch_size=config["training"]["batch_size"],
-        shuffle=True,
-        num_workers=config["training"]["num_workers"],
+        config,
+        training=True,
     )
 
-    validation_loader = DataLoader(
+    validation_loader = create_dataloader(
         validation_dataset,
-        batch_size=config["training"]["batch_size"],
-        shuffle=False,
-        num_workers=config["training"]["num_workers"],
+        config,
+        training=False,
     )
 
-    # Model
+    print("Training batches per epoch:", len(train_loader))
+    print("Validation batches:", len(validation_loader))
+
+    # Initialize model.
     model = SRCNN().to(device)
 
-    # Loss
+    # Initialize loss.
     criterion = SRCNNLoss()
 
-    # Optimizer
+    # Initialize optimizer.
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr=config["training"]["learning_rate"],
         weight_decay=config["training"]["weight_decay"],
     )
 
-    # Checkpoints
+    # Prepare checkpoint directory.
     checkpoint_dir = (
         PROJECT_ROOT / config["checkpoint"]["directory"]
     )
+
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     best_validation_loss = float("inf")
 
-    # Training loop
-    for epoch in range(config["training"]["epochs"]):
+    print("\nTRAINING STARTED")
+    print("=" * 65)
+
+    epochs = config["training"]["epochs"]
+
+    for epoch in range(epochs):
 
         train_loss = train_one_epoch(
             model,
@@ -200,23 +289,25 @@ def main():
         )
 
         print(
-            f"Epoch [{epoch + 1}/"
-            f"{config['training']['epochs']}] "
-            f"Train Loss: {train_loss:.6f} "
-            f"Validation Loss: {validation_loss:.6f}"
+            f"Epoch [{epoch + 1}/{epochs}] "
+            f"Train Loss: {train_loss:.8f} "
+            f"Validation Loss: {validation_loss:.8f}"
         )
 
         if validation_loss < best_validation_loss:
 
             best_validation_loss = validation_loss
 
-            checkpoint_path = checkpoint_dir / "best_srcnn.pth"
+            checkpoint_path = (
+                checkpoint_dir / "best_srcnn.pth"
+            )
 
             torch.save(
                 {
                     "epoch": epoch + 1,
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
+                    "train_loss": train_loss,
                     "validation_loss": validation_loss,
                     "config": config,
                 },
@@ -225,7 +316,10 @@ def main():
 
             print("Best checkpoint saved:", checkpoint_path)
 
-    print("\nSRCNN training completed.")
+    print("\n" + "=" * 65)
+    print("SRCNN TRAINING COMPLETED")
+    print("Best validation loss:", best_validation_loss)
+    print("=" * 65)
 
 
 if __name__ == "__main__":

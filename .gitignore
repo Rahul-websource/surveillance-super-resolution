@@ -26,3 +26,37 @@ __pycache__/
 # Secrets
 .env
 .env.*
+# Node.js dependencies and build output
+node_modules/
+app/node_modules/
+app/dist/
+
+# Local environment and OS files
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node dependencies and builds
+node_modules/
+dist/
+
+# Datasets and generated model files
+data/
+checkpoints/
+outputs/
+*.pth
+*.pt
+*.ckpt
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
